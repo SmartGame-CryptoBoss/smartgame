@@ -1,0 +1,15 @@
+{
+  "name": "smartgame-leads-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check": "wrangler deploy --dry-run",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "latest",
+    "@types/node": "^26.4.1",
+    "wrangler": "^4.129.0"
+  }
+}

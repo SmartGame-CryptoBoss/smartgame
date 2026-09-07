@@ -1,0 +1,38 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "smartgame-leads",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-07",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "GOOGLE_FORM_ENDPOINT": "https://docs.google.com/forms/d/e/1FAIpQLSe_hjUuXFdsNp6thlseYv-OczFiBocQReOmgJYvibEYl1IK_A/formResponse"
+  },
+  "ratelimits": [
+    {
+      "name": "ATTEMPT_RATE_LIMITER",
+      "namespace_id": "8474434001",
+      "simple": {
+        "limit": 8,
+        "period": 60
+      }
+    },
+    {
+      "name": "LEAD_RATE_LIMITER",
+      "namespace_id": "8474434002",
+      "simple": {
+        "limit": 2,
+        "period": 60
+      }
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "DEDUPE",
+      "id": "334ee999ba9f4827895d2694c8b7a30f"
+    }
+  ]
+}

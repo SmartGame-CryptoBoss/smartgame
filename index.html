@@ -321,7 +321,7 @@
         </div>
 
         <div class="lead-card reveal">
-          <form class="lead-form" id="lead-form" action="https://docs.google.com/forms/d/e/1FAIpQLSe_hjUuXFdsNp6thlseYv-OczFiBocQReOmgJYvibEYl1IK_A/formResponse" method="post" target="lead-form-target">
+          <form class="lead-form" id="lead-form" novalidate>
             <div class="form-field">
               <label for="lead-name">Ваше ім’я</label>
               <input id="lead-name" name="entry.1386002898" type="text" autocomplete="name" required maxlength="80">
@@ -359,8 +359,7 @@
               <input name="entry.671553290" type="checkbox" value="Погоджуюся з Політикою конфіденційності smartgame.club/privacy.html" required>
               <span>Погоджуюся з <a href="privacy.html" target="_blank" rel="noopener">Політикою конфіденційності</a> та обробкою даних для відповіді на заявку.</span>
             </label>
-            <input type="hidden" name="fvv" value="1">
-            <input type="hidden" name="pageHistory" value="0">
+            <label class="hp-field" aria-hidden="true">Не заповнюйте це поле<input name="website" type="text" tabindex="-1" autocomplete="off"></label>
             <button class="button lead-submit" type="submit">Надіслати заявку</button>
             <p class="form-status" id="lead-form-status" role="status" aria-live="polite"></p>
           </form>
@@ -369,7 +368,6 @@
             <h3>Дякуємо! Заявку отримано.</h3>
             <p>Ми зв’яжемося з вами найближчим часом.</p>
           </div>
-          <iframe class="lead-form-target" id="lead-form-target" name="lead-form-target" title="Службове підтвердження надсилання заявки"></iframe>
         </div>
       </div>
     </section>
@@ -399,6 +397,7 @@
       <nav aria-label="Юридичні сторінки"><a href="privacy.html">Політика конфіденційності</a><a href="terms.html">Умови користування</a></nav>
     </div>
   </footer>
+  <script src="config.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

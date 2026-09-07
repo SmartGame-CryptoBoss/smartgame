@@ -15,6 +15,6 @@ The Worker is the only public path from the SmartGame form to Google Forms. It v
 
 1. Run `pnpm install` and `pnpm test`.
 2. Set a random secret of at least 32 characters with `pnpm wrangler secret put CHALLENGE_SECRET`.
-3. Run `pnpm deploy`. Wrangler provisions the `DEDUPE` KV namespace and writes its ID back to `wrangler.jsonc` on first deploy.
+3. Run `pnpm deploy`. The production `DEDUPE` KV namespace and both rate limiters are already declared in `wrangler.jsonc`.
 
 Never commit `CHALLENGE_SECRET` or a local `.dev.vars` file.

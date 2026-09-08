@@ -331,21 +331,29 @@ export const telegramText = (lead, source, timestamp = Date.now()) => {
 };
 
 const sendToTelegram = async (lead, source, env, fetchImpl, timestamp) => {
-  if (!env.BOT_TOKEN || !env.CHAT_ID) return false;
-  const response = await fetchImpl(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+  const botToken = clean(env.BOT_TOKEN);
+  const chatId = clean(env.CHAT_ID);
+  if (!/^\d{6,12}:[a-zA-Z0-9_-]{30,}$/.test(botToken) || !/^-?\d+$/.test(chatId)) {
+    return { ok: false, reason: 'invalid_configuration' };
+  }
+  const response = await fetchImpl(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json; charset=UTF-8' },
     body: JSON.stringify({
-      chat_id: env.CHAT_ID,
+      chat_id: chatId,
       text: telegramText(lead, source, timestamp),
       parse_mode: 'HTML',
       disable_web_page_preview: true
     }),
     signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS)
   });
-  if (!response.ok) return false;
   const result = await response.json().catch(() => null);
-  return result?.ok === true;
+  return {
+    ok: response.ok && result?.ok === true,
+    status: response.status,
+    errorCode: Number(result?.error_code) || undefined,
+    reason: clean(result?.description).slice(0, 160) || undefined
+  };
 };
 
 const clientIp = (request) => clean(request.headers.get('CF-Connecting-IP')) || 'unknown';
@@ -463,15 +471,25 @@ export const handleRequest = async (request, env, dependencies = {}) => {
   const googleDelivered = await sendToGoogleForms(validation.lead, env, fetchImpl).catch(() => false);
   if (!googleDelivered) return json(origin, { ok: false, code: 'delivery_failed' }, 502);
 
-  const telegramDelivered = await sendToTelegram(
+  const telegramResult = await sendToTelegram(
     validation.lead,
     validation.source,
     env,
     fetchImpl,
     now()
-  ).catch(() => false);
+  ).catch((error) => ({
+    ok: false,
+    reason: error?.name === 'TimeoutError' ? 'timeout' : 'network_error'
+  }));
+  const telegramDelivered = telegramResult.ok;
   if (!telegramDelivered) {
-    console.warn(JSON.stringify({ event: 'telegram_delivery_failed', source: 'SmartGame' }));
+    console.warn(JSON.stringify({
+      event: 'telegram_delivery_failed',
+      source: 'SmartGame',
+      status: telegramResult.status,
+      errorCode: telegramResult.errorCode,
+      reason: telegramResult.reason
+    }));
   }
 
   try {

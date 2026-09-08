@@ -6,6 +6,7 @@ const MAX_BODY_BYTES = 16_384;
 const CHALLENGE_MIN_AGE_MS = 3_000;
 const CHALLENGE_MAX_AGE_MS = 2 * 60 * 60 * 1_000;
 const DUPLICATE_TTL_SECONDS = 10 * 60;
+const TELEGRAM_TIMEOUT_MS = 8_000;
 const LEVELS = new Set(['Новачок', 'Є досвід']);
 const INTERESTS = new Set([
   'Навчання',
@@ -157,6 +158,52 @@ const isValidPhone = (value) => /^\+?[\d\s().-]{7,24}$/.test(value)
 const isValidTelegram = (value) => /^@[a-zA-Z0-9_]{5,32}$/.test(value)
   || /^(?:https?:\/\/)?(?:t\.me|telegram\.me)\/[a-zA-Z0-9_]{5,32}\/?$/i.test(value);
 
+const normalizeSource = (input) => {
+  const sourceInput = input?.source;
+  if (sourceInput == null) {
+    return { ok: true, source: { pageUrl: '', referrer: '', utmSource: '', utmMedium: '', utmCampaign: '', utmContent: '', utmTerm: '' } };
+  }
+  if (typeof sourceInput !== 'object' || Array.isArray(sourceInput)) {
+    return { ok: false, code: 'invalid_source' };
+  }
+
+  const fields = {
+    pageUrl: [sourceInput.pageUrl, 500],
+    referrer: [sourceInput.referrer, 500],
+    utmSource: [sourceInput.utmSource, 100],
+    utmMedium: [sourceInput.utmMedium, 100],
+    utmCampaign: [sourceInput.utmCampaign, 150],
+    utmContent: [sourceInput.utmContent, 150],
+    utmTerm: [sourceInput.utmTerm, 150]
+  };
+  for (const [value, maxLength] of Object.values(fields)) {
+    if (!validString(value ?? '', maxLength)) return { ok: false, code: 'invalid_source' };
+  }
+  const source = Object.fromEntries(
+    Object.entries(fields).map(([name, [value]]) => [name, clean(value)])
+  );
+
+  if (source.pageUrl) {
+    try {
+      const pageUrl = new URL(source.pageUrl);
+      if (pageUrl.protocol !== 'https:' || !ALLOWED_ORIGINS.has(pageUrl.origin)) {
+        return { ok: false, code: 'invalid_source' };
+      }
+    } catch {
+      return { ok: false, code: 'invalid_source' };
+    }
+  }
+  if (source.referrer) {
+    try {
+      const referrer = new URL(source.referrer);
+      if (!['http:', 'https:'].includes(referrer.protocol)) return { ok: false, code: 'invalid_source' };
+    } catch {
+      return { ok: false, code: 'invalid_source' };
+    }
+  }
+  return { ok: true, source };
+};
+
 export const validateLead = (input) => {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     return { ok: false, code: 'invalid_payload' };
@@ -194,7 +241,10 @@ export const validateLead = (input) => {
   if (!LEVELS.has(lead.level)) return { ok: false, code: 'invalid_level' };
   if (!INTERESTS.has(lead.interest)) return { ok: false, code: 'invalid_interest' };
 
-  return { ok: true, lead };
+  const sourceValidation = normalizeSource(input);
+  if (!sourceValidation.ok) return sourceValidation;
+
+  return { ok: true, lead, source: sourceValidation.source };
 };
 
 export const leadFingerprint = async (lead, cryptoImpl = crypto) => {
@@ -233,6 +283,69 @@ const sendToGoogleForms = async (lead, env, fetchImpl) => {
     signal: AbortSignal.timeout(8_000)
   });
   return response.ok || (response.status >= 300 && response.status < 400);
+};
+
+const escapeHtml = (value) => clean(value)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;');
+
+export const telegramText = (lead, source, timestamp = Date.now()) => {
+  const contactLines = [
+    lead.phone ? `📞 <b>Телефон:</b> ${escapeHtml(lead.phone)}` : '',
+    lead.telegram ? `💬 <b>Telegram:</b> ${escapeHtml(lead.telegram)}` : ''
+  ].filter(Boolean);
+  const utmLines = [
+    ['utm_source', source.utmSource],
+    ['utm_medium', source.utmMedium],
+    ['utm_campaign', source.utmCampaign],
+    ['utm_content', source.utmContent],
+    ['utm_term', source.utmTerm]
+  ].filter(([, value]) => value)
+    .map(([label, value]) => `🏷 <b>${label}:</b> ${escapeHtml(value)}`);
+  const sourceLines = [
+    '🌐 <b>Джерело:</b> SmartGame',
+    source.pageUrl ? `🔗 <b>Сторінка:</b> ${escapeHtml(source.pageUrl)}` : '',
+    source.referrer ? `↩️ <b>Реферер:</b> ${escapeHtml(source.referrer)}` : '',
+    ...utmLines
+  ].filter(Boolean);
+  const dateTime = new Intl.DateTimeFormat('uk-UA', {
+    timeZone: 'Europe/Kyiv',
+    dateStyle: 'medium',
+    timeStyle: 'medium'
+  }).format(new Date(timestamp));
+
+  return [
+    '🔥 <b>Нова заявка SmartGame</b>',
+    '',
+    `👤 <b>Імʼя:</b> ${escapeHtml(lead.name)}`,
+    ...contactLines,
+    `📊 <b>Рівень:</b> ${escapeHtml(lead.level)}`,
+    `🎯 <b>Цікавить:</b> ${escapeHtml(lead.interest)}`,
+    `📝 <b>Мета:</b> ${escapeHtml(lead.goal) || '—'}`,
+    '✅ <b>Згода:</b> Так',
+    '',
+    ...sourceLines,
+    `🕒 <b>Дата/час:</b> ${escapeHtml(dateTime)} (Europe/Kyiv)`
+  ].join('\n');
+};
+
+const sendToTelegram = async (lead, source, env, fetchImpl, timestamp) => {
+  if (!env.BOT_TOKEN || !env.CHAT_ID) return false;
+  const response = await fetchImpl(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+    body: JSON.stringify({
+      chat_id: env.CHAT_ID,
+      text: telegramText(lead, source, timestamp),
+      parse_mode: 'HTML',
+      disable_web_page_preview: true
+    }),
+    signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS)
+  });
+  if (!response.ok) return false;
+  const result = await response.json().catch(() => null);
+  return result?.ok === true;
 };
 
 const clientIp = (request) => clean(request.headers.get('CF-Connecting-IP')) || 'unknown';
@@ -347,15 +460,26 @@ export const handleRequest = async (request, env, dependencies = {}) => {
     return json(origin, { ok: false, code: 'lead_rate_limited' }, 429, { 'Retry-After': '60' });
   }
 
-  const delivered = await sendToGoogleForms(validation.lead, env, fetchImpl).catch(() => false);
-  if (!delivered) return json(origin, { ok: false, code: 'delivery_failed' }, 502);
+  const googleDelivered = await sendToGoogleForms(validation.lead, env, fetchImpl).catch(() => false);
+  if (!googleDelivered) return json(origin, { ok: false, code: 'delivery_failed' }, 502);
+
+  const telegramDelivered = await sendToTelegram(
+    validation.lead,
+    validation.source,
+    env,
+    fetchImpl,
+    now()
+  ).catch(() => false);
+  if (!telegramDelivered) {
+    console.warn(JSON.stringify({ event: 'telegram_delivery_failed', source: 'SmartGame' }));
+  }
 
   try {
     await env.DEDUPE.put(duplicateKey, '1', { expirationTtl: DUPLICATE_TTL_SECONDS });
   } catch {
-    return json(origin, { ok: true, channel: 'google_forms', protectionDegraded: true });
+    return json(origin, { ok: true, channel: 'google_forms', telegramDelivered, protectionDegraded: true });
   }
-  return json(origin, { ok: true, channel: 'google_forms' });
+  return json(origin, { ok: true, channel: 'google_forms', telegramDelivered });
 };
 
 export default {

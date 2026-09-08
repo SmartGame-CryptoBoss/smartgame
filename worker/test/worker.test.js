@@ -44,7 +44,7 @@ class MemoryKv {
 const makeEnv = (overrides = {}) => ({
   CHALLENGE_SECRET: 'test-secret-that-is-at-least-thirty-two-characters',
   GOOGLE_FORM_ENDPOINT: 'https://docs.google.com/forms/d/e/test-form/formResponse',
-  BOT_TOKEN: 'test-bot-token',
+  BOT_TOKEN: '123456789:abcdefghijklmnopqrstuvwxyzABCDEFGHI',
   CHAT_ID: '-1001234567890',
   ATTEMPT_RATE_LIMITER: { limit: async () => ({ success: true }) },
   LEAD_RATE_LIMITER: { limit: async () => ({ success: true }) },
@@ -153,7 +153,7 @@ test('valid protected submission reaches Google Forms and then Telegram with all
   assert.match(calls[0].url, /^https:\/\/docs\.google\.com\/forms\//);
   assert.match(String(calls[0].options.body), /entry\.1386002898=/);
   assert.match(String(calls[0].options.body), /entry\.1792378795=/);
-  assert.equal(calls[1].url, 'https://api.telegram.org/bottest-bot-token/sendMessage');
+  assert.equal(calls[1].url, 'https://api.telegram.org/bot123456789:abcdefghijklmnopqrstuvwxyzABCDEFGHI/sendMessage');
   const telegramBody = JSON.parse(calls[1].options.body);
   assert.equal(telegramBody.chat_id, '-1001234567890');
   assert.equal(telegramBody.parse_mode, 'HTML');
@@ -216,6 +216,20 @@ test('Telegram failure does not break an already successful Google Forms submiss
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { ok: true, channel: 'google_forms', telegramDelivered: false });
   assert.equal(calls.length, 2);
+});
+
+test('invalid Telegram configuration is not sent to the API or exposed to the frontend', async () => {
+  const calls = [];
+  const env = makeEnv({ BOT_TOKEN: 'invalid-token' });
+  const payload = await protectedPayload(env);
+  const response = await handleRequest(requestFor(payload), env, {
+    now: () => START_TIME + 4_000,
+    fetchImpl: successfulDeliveryFetch(calls)
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, channel: 'google_forms', telegramDelivered: false });
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /^https:\/\/docs\.google\.com\/forms\//);
 });
 
 test('Telegram message escapes user-controlled HTML', () => {

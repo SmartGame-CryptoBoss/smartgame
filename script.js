@@ -75,6 +75,10 @@ const validateLeadForm=()=>{
 const buildLeadPayload=(formData,challenge)=>{
   const contact=String(formData.get('entry.1792378795')||'').trim();
   const isTelegram=/^@|^(?:https?:\/\/)?(?:t\.me|telegram\.me)\//i.test(contact);
+  const pageUrl=new URL(window.location.href);
+  const pageHref=pageUrl.href.length<=500?pageUrl.href:`${pageUrl.origin}${pageUrl.pathname}`;
+  const referrer=document.referrer.length<=500?document.referrer:'';
+  const utm=(name,maxLength)=>String(pageUrl.searchParams.get(name)||'').slice(0,maxLength);
   return {
     name:String(formData.get('entry.1386002898')||'').trim(),
     phone:isTelegram?'':contact,
@@ -84,7 +88,16 @@ const buildLeadPayload=(formData,challenge)=>{
     goal:String(formData.get('entry.1993426930')||'').trim(),
     privacyConsent:Boolean(formData.get('entry.671553290')),
     website:String(formData.get('website')||'').trim(),
-    challenge:challenge.token
+    challenge:challenge.token,
+    source:{
+      pageUrl:pageHref,
+      referrer,
+      utmSource:utm('utm_source',100),
+      utmMedium:utm('utm_medium',100),
+      utmCampaign:utm('utm_campaign',150),
+      utmContent:utm('utm_content',150),
+      utmTerm:utm('utm_term',150)
+    }
   };
 };
 
